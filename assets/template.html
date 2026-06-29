@@ -389,7 +389,10 @@ __DATA_PLACEHOLDER__
   // =====================================================================
   //  Render
   // =====================================================================
-  var COLW = 32, ROWH = 30, PADX = 30, PADY = 26, R = 5, RMERGE = 7;
+  var ROWH = 30, PADX = 28, PADY = 26, R = 5, RMERGE = 7;
+  // compress lane spacing as branch count grows so the subject column never
+  // clears a huge graph and leave a dead band on the left in sparse regions
+  var COLW = maxCol <= 8 ? 32 : Math.max(16, Math.round((330 - PADX) / maxCol));
   var graphWidth = PADX + maxCol * COLW;
   var contentX = graphWidth + 30;        // inline subject + pills column
   var CONTENT_END = contentX + 620;      // subject + pills must end at or before here
