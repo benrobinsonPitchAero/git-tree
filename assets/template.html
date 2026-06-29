@@ -6,12 +6,15 @@
 <title>git-tree</title>
 <style>
   :root {
-    --bg: #0a0c10;
-    --bg-soft: #0d1117;
-    --panel: #11151c;
-    --border: #222a36;
-    --text: #c9d1d9;
-    --text-dim: #7d8590;
+    --bg: #07090d;
+    --bg-soft: #0b0e14;
+    --panel: #0c1019;
+    --panel-soft: #0f1420;
+    --border: #1c2533;
+    --border-soft: #161d28;
+    --text: #e6edf3;
+    --text-mid: #aeb9c6;
+    --text-dim: #6e7b8a;
     --main: #2f81f7;
     --main-glow: #58a6ff;
     --gold: #ffd54a;
@@ -19,88 +22,183 @@
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; height: 100%;
-    background: var(--bg); color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 78% -10%, rgba(47,129,247,.07), transparent 60%),
+      var(--bg);
+    color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
+    font-size: 14px;
   }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1d2738; border-radius: 6px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #2a3852; }
+
   #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ---------- header ---------- */
   header {
-    display: flex; align-items: center; gap: 14px;
-    padding: 10px 16px; border-bottom: 1px solid var(--border);
-    background: linear-gradient(180deg, #0d1117, #0a0c10);
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(20,28,42,.9), rgba(8,11,16,.9));
+    backdrop-filter: blur(6px);
     flex: 0 0 auto; z-index: 5;
   }
-  header .brand { font-weight: 600; letter-spacing: .5px; color: #fff; }
-  header .brand .accent { color: var(--main-glow); text-shadow: 0 0 8px var(--main-glow); }
+  header .brand {
+    display: flex; align-items: center; gap: 9px;
+    font-weight: 700; font-size: 17px; letter-spacing: .3px; color: #fff;
+  }
+  header .brand .logo {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--main-glow);
+    box-shadow: 0 0 10px var(--main-glow), 0 0 22px rgba(88,166,255,.5);
+  }
+  header .brand .accent { color: var(--main-glow); }
+  .search-wrap { position: relative; flex: 0 0 360px; }
+  .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: .55; }
   #search {
-    flex: 0 0 320px; background: #0a0c10; border: 1px solid var(--border);
-    color: var(--text); padding: 7px 12px; border-radius: 8px; font-size: 13px;
-    outline: none; transition: border-color .15s, box-shadow .15s;
+    width: 100%; background: rgba(5,7,11,.85); border: 1px solid var(--border);
+    color: var(--text); padding: 9px 14px 9px 36px; border-radius: 10px; font-size: 14px;
+    outline: none; transition: border-color .15s, box-shadow .15s, background .15s;
   }
-  #search:focus { border-color: var(--main); box-shadow: 0 0 0 2px rgba(47,129,247,.25); }
+  #search::placeholder { color: var(--text-dim); }
+  #search:focus { border-color: var(--main); background: #05070b; box-shadow: 0 0 0 3px rgba(47,129,247,.22); }
   #banner {
-    display: none; font-size: 12px; color: #ffce8a;
-    background: rgba(255,158,0,.08); border: 1px solid rgba(255,158,0,.25);
-    padding: 5px 10px; border-radius: 7px;
+    display: none; font-size: 12.5px; color: #ffce8a; align-items: center; gap: 6px;
+    background: rgba(255,158,0,.08); border: 1px solid rgba(255,158,0,.28);
+    padding: 6px 12px; border-radius: 8px;
   }
-  .meta-note { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+  .meta-note {
+    margin-left: auto; font-size: 12.5px; color: var(--text-dim);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .meta-note .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--main-glow); box-shadow: 0 0 8px var(--main-glow); }
+
   #main { display: flex; flex: 1 1 auto; min-height: 0; }
-  #graph-wrap { flex: 1 1 auto; overflow-y: auto; overflow-x: auto; position: relative; }
+  #graph-wrap { flex: 1 1 auto; overflow: auto; position: relative; }
   #graph { display: block; }
-  /* side panel */
+
+  /* ---------- svg rows ---------- */
+  .row-bg { fill: transparent; transition: fill .08s; }
+  .row-bg.even { fill: rgba(255,255,255,.012); }
+  .row-bg.hover { fill: rgba(255,255,255,.045); }
+  .row-bg.selected { fill: rgba(88,166,255,.11); }
+  .row-accent { opacity: 0; transition: opacity .1s; }
+  .row-accent.on { opacity: 1; }
+  .row { transition: opacity .12s; }
+  .row.dim { opacity: .16; }
+  .row-hit { cursor: pointer; }
+  .subj { fill: var(--text); font-size: 13.5px; }
+  .subj-merge { fill: var(--text-mid); font-style: italic; }
+  .meta-author { fill: var(--text-mid); font-size: 12px; }
+  .meta-time { fill: var(--text-dim); font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  text { user-select: none; }
+  .pill-text { font-size: 11.5px; font-weight: 700; letter-spacing: .2px; }
+  .tag-text { font-size: 11.5px; font-weight: 700; fill: var(--gold); letter-spacing: .2px; }
+  .edge { fill: none; stroke-width: 2.2; }
+  @keyframes headpulse { 0%,100% { stroke-opacity: 1; } 50% { stroke-opacity: .3; } }
+  .head-outline { animation: headpulse 1.8s ease-in-out infinite; }
+
+  /* ---------- side panel ---------- */
   #panel {
-    flex: 0 0 340px; border-left: 1px solid var(--border);
-    background: var(--panel); padding: 18px; overflow-y: auto;
+    flex: 0 0 372px; border-left: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--panel-soft), var(--panel));
+    overflow-y: auto;
   }
   #panel.empty .panel-body { display: none; }
-  #panel .placeholder { color: var(--text-dim); font-size: 13px; line-height: 1.6; }
-  #panel h2 { font-size: 15px; margin: 0 0 12px; color: #fff; line-height: 1.35; word-break: break-word; }
-  .panel-row { margin-bottom: 12px; font-size: 12.5px; }
-  .panel-row .label { color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; margin-bottom: 3px; }
-  .panel-row .value { color: var(--text); word-break: break-word; }
-  #panel .sha {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer;
-    background: #0a0c10; border: 1px solid var(--border); padding: 4px 8px;
-    border-radius: 6px; display: inline-block; transition: border-color .15s;
+  #panel:not(.empty) .placeholder { display: none; }
+  .placeholder {
+    height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 40px; color: var(--text-dim); gap: 10px;
   }
-  #panel .sha:hover { border-color: var(--main); }
-  #panel .sha.copied { border-color: #39ff14; color: #39ff14; }
-  #panel .body-text { white-space: pre-wrap; line-height: 1.55; color: var(--text); font-size: 12.5px; }
-  .panel-pills { display: flex; flex-wrap: wrap; gap: 6px; }
-  /* tooltip */
+  .placeholder .ph-icon {
+    width: 58px; height: 58px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+    background: rgba(88,166,255,.08); border: 1px solid rgba(88,166,255,.22);
+    box-shadow: inset 0 0 24px rgba(88,166,255,.08);
+    margin-bottom: 4px;
+  }
+  .placeholder .ph-title { font-size: 15px; color: var(--text-mid); font-weight: 600; }
+  .placeholder .ph-sub { font-size: 12.5px; line-height: 1.6; max-width: 230px; }
+
+  .panel-body { display: flex; flex-direction: column; }
+  .p-head {
+    position: relative; padding: 20px 22px 18px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .p-accent {
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  }
+  .p-author { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .p-avatar {
+    width: 40px; height: 40px; border-radius: 11px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; color: #06080c; letter-spacing: .5px;
+  }
+  .p-name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .p-when { font-size: 12px; color: var(--text-dim); margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .p-subject { font-size: 16.5px; font-weight: 600; line-height: 1.4; color: #fff; word-break: break-word; }
+  .p-pills { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+
+  .p-section { padding: 16px 22px; border-bottom: 1px solid var(--border-soft); }
+  .p-section:last-child { border-bottom: none; }
+  .p-label {
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: .8px;
+    font-size: 10.5px; font-weight: 700; margin-bottom: 9px;
+  }
+  .p-bodytext {
+    white-space: pre-wrap; line-height: 1.6; color: var(--text-mid); font-size: 13px;
+    background: rgba(0,0,0,.28); border: 1px solid var(--border-soft);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .p-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; }
+  .p-grid .full { grid-column: 1 / -1; }
+  .p-value { color: var(--text); font-size: 13px; }
+  .chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+    background: rgba(0,0,0,.35); border: 1px solid var(--border);
+    padding: 5px 10px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .chip.copyable { cursor: pointer; }
+  .chip.copyable:hover { border-color: var(--main); color: var(--main-glow); }
+  .chip.copied { border-color: #39ff14; color: #39ff14; }
+  .chip.parent { cursor: pointer; }
+  .chip.parent:hover { border-color: var(--main-glow); color: var(--main-glow); background: rgba(88,166,255,.08); }
+  .parents-row { display: flex; flex-wrap: wrap; gap: 7px; }
+
+  /* ---------- tooltip ---------- */
   #tooltip {
     position: fixed; pointer-events: none; z-index: 20; display: none;
-    background: #0a0c10; border: 1px solid var(--border); border-radius: 7px;
-    padding: 6px 10px; font-size: 12px; max-width: 360px;
-    box-shadow: 0 6px 24px rgba(0,0,0,.6);
+    background: rgba(8,11,17,.97); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 11px; font-size: 12.5px; max-width: 420px; color: var(--text);
+    box-shadow: 0 8px 30px rgba(0,0,0,.7);
   }
-  #tooltip .t-sha { font-family: ui-monospace, monospace; color: var(--text-dim); margin-right: 6px; }
-  /* svg bits */
-  .edge { fill: none; stroke-width: 2; }
-  .node-hit { cursor: pointer; }
-  .node-dim { opacity: .2; }
-  text { user-select: none; }
-  .pill-text { font-size: 11px; font-weight: 600; }
-  .tag-text { font-size: 11px; font-weight: 600; fill: var(--gold); }
-  @keyframes headpulse {
-    0%,100% { stroke-opacity: 1; }
-    50% { stroke-opacity: .35; }
-  }
-  .head-outline { animation: headpulse 1.8s ease-in-out infinite; }
+  #tooltip .t-sha { font-family: ui-monospace, monospace; color: var(--main-glow); margin-right: 8px; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <span class="brand">git&#8203;<span class="accent">tree</span></span>
-    <input id="search" type="text" placeholder="Search message, author, or SHA&#8230;" autocomplete="off" spellcheck="false">
+    <span class="brand"><span class="logo"></span>git&#8203;<span class="accent">tree</span></span>
+    <div class="search-wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>
+      <input id="search" type="text" placeholder="Search message, author, or SHA&#8230;" autocomplete="off" spellcheck="false">
+    </div>
     <span id="banner"></span>
     <span class="meta-note" id="meta-note"></span>
   </header>
   <div id="main">
     <div id="graph-wrap"><svg id="graph"></svg></div>
     <aside id="panel" class="empty">
-      <div class="placeholder">Click a commit to see its details here.</div>
+      <div class="placeholder">
+        <div class="ph-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"></circle><line x1="12" y1="3" x2="12" y2="8.8"></line><line x1="12" y1="15.2" x2="12" y2="21"></line></svg>
+        </div>
+        <div class="ph-title">Select a commit</div>
+        <div class="ph-sub">Click any row to inspect its message, copy its SHA, and trace its parents.</div>
+      </div>
       <div class="panel-body"></div>
     </aside>
   </div>
@@ -291,15 +389,26 @@ __DATA_PLACEHOLDER__
   // =====================================================================
   //  Render
   // =====================================================================
-  var COLW = 34, ROWH = 46, PADX = 34, PADY = 34, R = 6, RMERGE = 8;
+  var COLW = 32, ROWH = 30, PADX = 30, PADY = 26, R = 5, RMERGE = 7;
   var graphWidth = PADX + maxCol * COLW;
-  var labelX = graphWidth + 26;
+  var contentX = graphWidth + 30;        // inline subject + pills column
+  var CONTENT_END = contentX + 620;      // subject + pills must end at or before here
+  var META_GAP = 150;                    // min clearance kept for the author/time column
   var height = PADY * 2 + (commits.length - 1) * ROWH;
+  var svgWidth = CONTENT_END + META_GAP + 28; // provisional; layout() stretches to the viewport
+
+  // pre-measure each commit's trailing pill block so the subject can be sized to fit
+  function pillWidth(ref) { return ref.name.length * 6.9 + (ref.kind === "tag" ? 28 : 22); }
+  commits.forEach(function (c) {
+    var w = 0;
+    c.refs.forEach(function (ref, i) { w += pillWidth(ref) + (i ? 8 : 0); });
+    c._pillsW = w;
+  });
 
   function cx(c) { return PADX + c.col * COLW; }
   function cy(c) { return PADY + c.row * ROWH; }
 
-  var svg = d3.select("#graph").attr("height", height);
+  var svg = d3.select("#graph").attr("height", height).attr("width", Math.max(svgWidth, graphWidth + 40));
 
   // defs: neon glow filter
   var defs = svg.append("defs");
@@ -309,13 +418,26 @@ __DATA_PLACEHOLDER__
   merge.append("feMergeNode").attr("in", "blur");
   merge.append("feMergeNode").attr("in", "SourceGraphic");
 
+  // row backgrounds + selection accents (behind the lanes/edges)
+  var gBg = svg.append("g");
   // Glow is applied to the edges GROUP, not per-edge: a perfectly vertical (same-lane)
   // line has a zero-width bounding box, and an objectBoundingBox filter region collapses
   // to nothing on it, so per-edge filters make vertical lines disappear. The group's bbox
   // spans the whole graph, so the filter region is always valid.
   var gEdges = svg.append("g").attr("filter", "url(#glow)");
-  var gNodes = svg.append("g");
-  var gLabels = svg.append("g");
+  var gRows = svg.append("g");
+
+  gBg.selectAll("rect.row-bg").data(commits).enter().append("rect")
+    .attr("class", function (c) { return "row-bg" + (c.row % 2 ? "" : " even"); })
+    .attr("x", 0).attr("y", function (c) { return cy(c) - ROWH / 2; })
+    .attr("width", svgWidth).attr("height", ROWH)
+    .each(function (c) { c._bg = this; });
+  gBg.selectAll("rect.row-accent").data(commits).enter().append("rect")
+    .attr("class", "row-accent")
+    .attr("x", 0).attr("y", function (c) { return cy(c) - ROWH / 2; })
+    .attr("width", 3).attr("height", ROWH)
+    .attr("fill", function (c) { return c.color; })
+    .each(function (c) { c._accent = this; });
 
   // ---- edges ----
   var edgeData = [];
@@ -337,12 +459,20 @@ __DATA_PLACEHOLDER__
     .attr("stroke", function (d) { return d.color; })
     .attr("stroke-opacity", 0.85);
 
-  // ---- nodes ----
+  // ---- rows (node + inline subject + pills + meta) ----
   var tooltip = document.getElementById("tooltip");
-  var node = gNodes.selectAll("g.node").data(commits).enter().append("g")
-    .attr("class", "node node-hit")
-    .attr("transform", function (c) { return "translate(" + cx(c) + "," + cy(c) + ")"; })
+  var rowG = gRows.selectAll("g.row").data(commits).enter().append("g")
+    .attr("class", "row")
+    .attr("transform", function (c) { return "translate(0," + cy(c) + ")"; })
+    .each(function (c) { c._row = this; });
+
+  rowG.append("rect").attr("class", "row-hit")
+    .attr("x", 0).attr("y", -ROWH / 2).attr("width", svgWidth).attr("height", ROWH)
+    .attr("fill", "transparent");
+
+  rowG
     .on("mouseenter", function (ev, c) {
+      c._bg.classList.add("hover");
       tooltip.style.display = "block";
       tooltip.innerHTML = '<span class="t-sha">' + c.sha.slice(0, 7) + "</span>" + escapeHtml(c.subject);
     })
@@ -350,31 +480,42 @@ __DATA_PLACEHOLDER__
       tooltip.style.left = (ev.clientX + 14) + "px";
       tooltip.style.top = (ev.clientY + 14) + "px";
     })
-    .on("mouseleave", function () { tooltip.style.display = "none"; })
-    .on("click", function (ev, c) { showPanel(c); });
+    .on("mouseleave", function (ev, c) { c._bg.classList.remove("hover"); tooltip.style.display = "none"; })
+    .on("click", function (ev, c) { selectCommit(c); });
 
   // merge: outer glowing ring
-  node.filter(function (c) { return c.parents.length >= 2; }).append("circle")
+  rowG.filter(function (c) { return c.parents.length >= 2; }).append("circle")
+    .attr("cx", function (c) { return cx(c); }).attr("cy", 0)
     .attr("r", RMERGE + 5).attr("fill", "none")
     .attr("stroke", function (c) { return c.color; }).attr("stroke-width", 1.6)
     .attr("stroke-opacity", 0.55).attr("filter", "url(#glow)");
 
-  node.append("circle")
+  rowG.append("circle")
+    .attr("cx", function (c) { return cx(c); }).attr("cy", 0)
     .attr("r", function (c) { return c.parents.length >= 2 ? RMERGE : R; })
     .attr("fill", function (c) { return c.color; })
     .attr("filter", "url(#glow)");
-  node.append("circle")
+  rowG.append("circle")
+    .attr("cx", function (c) { return cx(c); }).attr("cy", 0)
     .attr("r", function (c) { return (c.parents.length >= 2 ? RMERGE : R) - 2.5; })
-    .attr("fill", "#0a0c10").attr("fill-opacity", 0.35);
+    .attr("fill", "#06080c").attr("fill-opacity", 0.55);
 
-  // ---- ref labels (pills + tags) to the right of the graph ----
-  var labelG = gLabels.selectAll("g.lbl").data(commits.filter(function (c) { return c.refs.length; })).enter()
-    .append("g").attr("transform", function (c) { return "translate(" + labelX + "," + cy(c) + ")"; });
+  // inline subject — sized so subject + trailing pills never reach the author/time column
+  rowG.append("text")
+    .attr("class", function (c) { return "subj" + (c.parents.length >= 2 ? " subj-merge" : ""); })
+    .attr("x", contentX).attr("y", 4.5)
+    .text(function (c) { return c.subject || "(no message)"; })
+    .each(function (c) {
+      var avail = (CONTENT_END - contentX) - (c._pillsW ? c._pillsW + 14 : 0);
+      truncateText(this, Math.max(90, avail));
+      c._subjW = this.getComputedTextLength();
+    });
 
-  labelG.each(function (c) {
-    var g = d3.select(this);
+  // trailing branch/tag pills (attached just after the subject)
+  rowG.filter(function (c) { return c.refs.length; }).each(function (c) {
+    var g = d3.select(this).append("g")
+      .attr("transform", "translate(" + (contentX + c._subjW + 14) + ",0)");
     var offset = 0;
-    // order: HEAD branch first, then branches, remotes, tags
     var refs = c.refs.slice().sort(function (a, b) {
       if (a.isHead !== b.isHead) return a.isHead ? -1 : 1;
       var order = { branch: 0, remote: 1, tag: 2 };
@@ -383,18 +524,16 @@ __DATA_PLACEHOLDER__
     refs.forEach(function (ref) {
       var isTag = ref.kind === "tag";
       var txt = ref.name;
-      var w = txt.length * 6.7 + (isTag ? 26 : 20);
+      var w = txt.length * 6.9 + (isTag ? 28 : 22);
       var pg = g.append("g").attr("transform", "translate(" + offset + ",0)");
       if (isTag) {
-        // tag pennant shape
-        var h = 18;
         pg.append("path")
           .attr("d", "M9,-9 L" + (w - 4) + ",-9 L" + (w - 4) + ",9 L9,9 L0,0 Z")
-          .attr("fill", "rgba(255,213,74,.12)").attr("stroke", "#ffd54a").attr("stroke-width", 1.2);
+          .attr("fill", "rgba(255,213,74,.13)").attr("stroke", "#ffd54a").attr("stroke-width", 1.2);
         pg.append("circle").attr("cx", 8).attr("cy", 0).attr("r", 2).attr("fill", "#ffd54a");
-        pg.append("text").attr("x", 16).attr("y", 4).attr("class", "tag-text").text(txt);
+        pg.append("text").attr("x", 17).attr("y", 4).attr("class", "tag-text").text(txt);
       } else {
-        var rect = pg.append("rect").attr("x", 0).attr("y", -10).attr("width", w).attr("height", 20)
+        pg.append("rect").attr("x", 0).attr("y", -10).attr("width", w).attr("height", 20)
           .attr("rx", 10).attr("fill", hexA(ref.color, 0.16))
           .attr("stroke", ref.color).attr("stroke-width", 1.3);
         if (ref.isHead) {
@@ -402,41 +541,122 @@ __DATA_PLACEHOLDER__
             .attr("rx", 12).attr("fill", "none").attr("stroke", "#ffffff").attr("stroke-width", 1.4)
             .attr("class", "head-outline").attr("filter", "url(#glow)");
         }
-        pg.append("text").attr("x", 9).attr("y", 4).attr("class", "pill-text")
+        pg.append("text").attr("x", 10).attr("y", 4).attr("class", "pill-text")
           .attr("fill", ref.color).text(txt);
       }
       offset += w + 8;
     });
   });
 
-  // widen svg to fit labels
-  var rightMost = labelX + 360;
-  svg.attr("width", Math.max(rightMost, graphWidth + 40));
+  // right-aligned author + relative time (x set by layout())
+  var metaSel = rowG.append("text").attr("class", "meta-author")
+    .attr("x", CONTENT_END + META_GAP).attr("y", 4.5).attr("text-anchor", "end")
+    .text(function (c) { return truncStr(c.author, 22) + "   " + relTime(c.iso); });
+
+  // stretch the content to fill the viewport: meta pins to the right edge and the row
+  // backgrounds span the full width, so wide screens read as full-width list rows
+  // instead of leaving a dead gap on the right.
+  var hitSel = gRows.selectAll("rect.row-hit");
+  var bgSel = gBg.selectAll("rect.row-bg");
+  function layout() {
+    var vw = document.getElementById("graph-wrap").clientWidth;
+    var metaX = Math.max(CONTENT_END + META_GAP, vw - 26);
+    var w = Math.max(metaX + 24, graphWidth + 40);
+    svg.attr("width", w);
+    bgSel.attr("width", w);
+    hitSel.attr("width", w);
+    metaSel.attr("x", metaX);
+  }
+  layout();
+  window.addEventListener("resize", layout);
 
   // =====================================================================
-  //  Side panel
+  //  Selection + side panel
   // =====================================================================
   var panel = document.getElementById("panel");
+  var graphWrap = document.getElementById("graph-wrap");
+  var selected = null;
+
+  function selectCommit(c) {
+    if (selected && selected !== c) {
+      selected._bg.classList.remove("selected");
+      selected._accent.classList.remove("on");
+    }
+    selected = c;
+    c._bg.classList.add("selected");
+    c._accent.classList.add("on");
+    showPanel(c);
+  }
+  function scrollToCommit(c) {
+    var top = cy(c) - graphWrap.clientHeight / 2;
+    graphWrap.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }
+
   function fmtDate(iso) {
     if (!iso) return "";
     var d = new Date(iso); if (isNaN(d)) return iso;
     function p(n) { return (n < 10 ? "0" : "") + n; }
     return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
   }
+  function relTime(iso) {
+    var d = new Date(iso); if (isNaN(d)) return "";
+    var s = (Date.now() - d.getTime()) / 1000;
+    if (s < 45) return "just now";
+    var m = s / 60; if (m < 60) return Math.floor(m) + "m ago";
+    var h = m / 60; if (h < 24) return Math.floor(h) + "h ago";
+    var dy = h / 24; if (dy < 30) return Math.floor(dy) + "d ago";
+    var mo = dy / 30; if (mo < 12) return Math.floor(mo) + "mo ago";
+    return Math.floor(mo / 12) + "y ago";
+  }
+  function initials(name) {
+    var parts = (name || "").trim().split(/\s+/);
+    var a = (parts[0] || "")[0] || "";
+    var b = parts.length > 1 ? (parts[parts.length - 1][0] || "") : "";
+    return (a + b).toUpperCase() || "?";
+  }
+
   function showPanel(c) {
     panel.classList.remove("empty");
+    var color = c.color || MAIN;
     var pillsHtml = c.refs.map(function (ref) {
-      if (ref.kind === "tag") return '<span style="display:inline-block;padding:2px 9px;border-radius:6px;border:1px solid #ffd54a;color:#ffd54a;background:rgba(255,213,74,.1);font-size:11px;font-weight:600">' + escapeHtml(ref.name) + "</span>";
-      return '<span style="display:inline-block;padding:2px 9px;border-radius:10px;border:1px solid ' + ref.color + ';color:' + ref.color + ';background:' + hexA(ref.color, 0.14) + ';font-size:11px;font-weight:600">' + escapeHtml(ref.name) + "</span>";
+      if (ref.kind === "tag") return '<span class="ref-pill" style="border-color:#ffd54a;color:#ffd54a;background:rgba(255,213,74,.12)">' + escapeHtml(ref.name) + "</span>";
+      return '<span class="ref-pill" style="border-color:' + ref.color + ';color:' + ref.color + ';background:' + hexA(ref.color, 0.14) + '">' + escapeHtml(ref.name) + "</span>";
     }).join("");
+
+    var parentsHtml = c.parents.length
+      ? c.parents.map(function (p) {
+          var known = byId[p];
+          return '<span class="chip parent" data-sha="' + p + '"' + (known ? "" : ' style="cursor:default;opacity:.6"') + '>' + escapeHtml(p.slice(0, 7)) + "</span>";
+        }).join("")
+      : '<span class="p-value" style="color:var(--text-dim)">root commit</span>';
+
     var body = panel.querySelector(".panel-body");
     body.innerHTML =
-      '<h2>' + escapeHtml(c.subject) + "</h2>" +
-      (c.body ? '<div class="panel-row"><div class="body-text">' + escapeHtml(c.body) + "</div></div>" : "") +
-      (pillsHtml ? '<div class="panel-row"><div class="label">Refs</div><div class="panel-pills">' + pillsHtml + "</div></div>" : "") +
-      '<div class="panel-row"><div class="label">Commit</div><div class="value"><span class="sha" id="sha-copy">' + escapeHtml(c.sha.slice(0, 10)) + "</span></div></div>" +
-      '<div class="panel-row"><div class="label">Author</div><div class="value">' + escapeHtml(c.author) + "</div></div>" +
-      '<div class="panel-row"><div class="label">Date</div><div class="value">' + escapeHtml(fmtDate(c.iso)) + "</div></div>";
+      '<div class="p-head">' +
+        '<div class="p-accent" style="background:' + color + ';box-shadow:0 0 14px ' + hexA(color, 0.7) + '"></div>' +
+        '<div class="p-author">' +
+          '<div class="p-avatar" style="background:' + color + ';box-shadow:0 0 16px ' + hexA(color, 0.45) + '">' + escapeHtml(initials(c.author)) + "</div>" +
+          '<div><div class="p-name">' + escapeHtml(c.author || "Unknown") + '</div>' +
+          '<div class="p-when">' + escapeHtml(relTime(c.iso)) + '  ·  ' + escapeHtml(fmtDate(c.iso)) + "</div></div>" +
+        "</div>" +
+        '<div class="p-subject">' + escapeHtml(c.subject || "(no message)") + "</div>" +
+        (pillsHtml ? '<div class="p-pills">' + pillsHtml + "</div>" : "") +
+      "</div>" +
+      (c.body ? '<div class="p-section"><div class="p-label">Description</div><div class="p-bodytext">' + escapeHtml(c.body) + "</div></div>" : "") +
+      '<div class="p-section"><div class="p-grid">' +
+        '<div class="full"><div class="p-label">Commit</div><span class="chip copyable" id="sha-copy">' +
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>' +
+          escapeHtml(c.sha.slice(0, 10)) + "</span></div>" +
+        '<div class="full"><div class="p-label">Parents</div><div class="parents-row">' + parentsHtml + "</div></div>" +
+      "</div></div>";
+
+    // inject ref-pill style once
+    if (!document.getElementById("ref-pill-style")) {
+      var st = document.createElement("style"); st.id = "ref-pill-style";
+      st.textContent = ".ref-pill{display:inline-block;padding:3px 10px;border-radius:999px;border:1px solid;font-size:11.5px;font-weight:700;letter-spacing:.2px}";
+      document.head.appendChild(st);
+    }
+
     var shaEl = document.getElementById("sha-copy");
     shaEl.addEventListener("click", function () {
       var full = c.sha;
@@ -444,7 +664,17 @@ __DATA_PLACEHOLDER__
         var ta = document.createElement("textarea"); ta.value = full; document.body.appendChild(ta); ta.select();
         try { document.execCommand("copy"); } catch (e) {} document.body.removeChild(ta); go();
       });
-      function go() { shaEl.classList.add("copied"); shaEl.textContent = "copied ✓"; setTimeout(function () { shaEl.classList.remove("copied"); shaEl.textContent = full.slice(0, 10); }, 1100); }
+      function go() {
+        shaEl.classList.add("copied");
+        var prev = shaEl.innerHTML;
+        shaEl.textContent = "copied ✓";
+        setTimeout(function () { shaEl.classList.remove("copied"); shaEl.innerHTML = prev; }, 1100);
+      }
+    });
+    Array.prototype.forEach.call(body.querySelectorAll(".chip.parent"), function (el) {
+      var sha = el.getAttribute("data-sha");
+      if (!byId[sha]) return;
+      el.addEventListener("click", function () { selectCommit(byId[sha]); scrollToCommit(byId[sha]); });
     });
   }
 
@@ -457,12 +687,10 @@ __DATA_PLACEHOLDER__
   var searchEl = document.getElementById("search");
   searchEl.addEventListener("input", function () {
     var q = searchEl.value.trim().toLowerCase();
-    node.classed("node-dim", function (c) { return q ? !matchesQuery(c, q) : false; });
-    labelG.style("opacity", function (c) { return (!q || matchesQuery(c, q)) ? 1 : 0.2; });
-    // edges stay bright only when both endpoints match, so branch lines dim with the nodes
+    rowG.classed("dim", function (c) { return q ? !matchesQuery(c, q) : false; });
     edgeSel.style("opacity", function (d) {
       if (!q) return 1;
-      return (matchesQuery(d.from, q) && matchesQuery(d.to, q)) ? 1 : 0.2;
+      return (matchesQuery(d.from, q) && matchesQuery(d.to, q)) ? 1 : 0.18;
     });
   });
 
@@ -471,17 +699,26 @@ __DATA_PLACEHOLDER__
   // =====================================================================
   var meta = (typeof META !== "undefined") ? META : {};
   var note = document.getElementById("meta-note");
-  note.textContent = commits.length + " commit" + (commits.length === 1 ? "" : "s") +
-    (meta.branch ? "  ·  branch: " + meta.branch : "  ·  all branches");
+  note.innerHTML = '<span class="dot"></span>' + commits.length + " commit" + (commits.length === 1 ? "" : "s") +
+    (meta.branch ? "  ·  " + escapeHtml(meta.branch) : "  ·  all branches");
   if (meta.total && meta.total > commits.length) {
     var banner = document.getElementById("banner");
-    banner.style.display = "inline-block";
+    banner.style.display = "inline-flex";
     banner.textContent = "Showing " + commits.length.toLocaleString() + " of " + meta.total.toLocaleString() +
-      " commits — re-run with --depth N for more.";
+      " — re-run with --depth N for more.";
   }
 
   // ---- helpers ----
   function escapeHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function truncStr(s, n) { s = s || ""; return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+  function truncateText(node, maxW) {
+    if (node.getComputedTextLength() <= maxW) return;
+    var t = node.textContent;
+    while (t.length > 1 && node.getComputedTextLength() > maxW) {
+      t = t.slice(0, -1);
+      node.textContent = t + "…";
+    }
+  }
   function hexA(hex, a) {
     var h = hex.replace("#", "");
     if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
