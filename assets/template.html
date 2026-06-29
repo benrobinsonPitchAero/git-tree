@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git-tree</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --bg-soft: #0d1117;
+    --panel: #11151c;
+    --border: #222a36;
+    --text: #c9d1d9;
+    --text-dim: #7d8590;
+    --main: #2f81f7;
+    --main-glow: #58a6ff;
+    --gold: #ffd54a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #0d1117, #0a0c10);
+    flex: 0 0 auto; z-index: 5;
+  }
+  header .brand { font-weight: 600; letter-spacing: .5px; color: #fff; }
+  header .brand .accent { color: var(--main-glow); text-shadow: 0 0 8px var(--main-glow); }
+  #search {
+    flex: 0 0 320px; background: #0a0c10; border: 1px solid var(--border);
+    color: var(--text); padding: 7px 12px; border-radius: 8px; font-size: 13px;
+    outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  #search:focus { border-color: var(--main); box-shadow: 0 0 0 2px rgba(47,129,247,.25); }
+  #banner {
+    display: none; font-size: 12px; color: #ffce8a;
+    background: rgba(255,158,0,.08); border: 1px solid rgba(255,158,0,.25);
+    padding: 5px 10px; border-radius: 7px;
+  }
+  .meta-note { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+  #main { display: flex; flex: 1 1 auto; min-height: 0; }
+  #graph-wrap { flex: 1 1 auto; overflow-y: auto; overflow-x: auto; position: relative; }
+  #graph { display: block; }
+  /* side panel */
+  #panel {
+    flex: 0 0 340px; border-left: 1px solid var(--border);
+    background: var(--panel); padding: 18px; overflow-y: auto;
+  }
+  #panel.empty .panel-body { display: none; }
+  #panel .placeholder { color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+  #panel h2 { font-size: 15px; margin: 0 0 12px; color: #fff; line-height: 1.35; word-break: break-word; }
+  .panel-row { margin-bottom: 12px; font-size: 12.5px; }
+  .panel-row .label { color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; margin-bottom: 3px; }
+  .panel-row .value { color: var(--text); word-break: break-word; }
+  #panel .sha {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer;
+    background: #0a0c10; border: 1px solid var(--border); padding: 4px 8px;
+    border-radius: 6px; display: inline-block; transition: border-color .15s;
+  }
+  #panel .sha:hover { border-color: var(--main); }
+  #panel .sha.copied { border-color: #39ff14; color: #39ff14; }
+  #panel .body-text { white-space: pre-wrap; line-height: 1.55; color: var(--text); font-size: 12.5px; }
+  .panel-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* tooltip */
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 20; display: none;
+    background: #0a0c10; border: 1px solid var(--border); border-radius: 7px;
+    padding: 6px 10px; font-size: 12px; max-width: 360px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.6);
+  }
+  #tooltip .t-sha { font-family: ui-monospace, monospace; color: var(--text-dim); margin-right: 6px; }
+  /* svg bits */
+  .edge { fill: none; stroke-width: 2; }
+  .node-hit { cursor: pointer; }
+  .node-dim { opacity: .2; }
+  text { user-select: none; }
+  .pill-text { font-size: 11px; font-weight: 600; }
+  .tag-text { font-size: 11px; font-weight: 600; fill: var(--gold); }
+  @keyframes headpulse {
+    0%,100% { stroke-opacity: 1; }
+    50% { stroke-opacity: .35; }
+  }
+  .head-outline { animation: headpulse 1.8s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="brand">git&#8203;<span class="accent">tree</span></span>
+    <input id="search" type="text" placeholder="Search message, author, or SHA&#8230;" autocomplete="off" spellcheck="false">
+    <span id="banner"></span>
+    <span class="meta-note" id="meta-note"></span>
+  </header>
+  <div id="main">
+    <div id="graph-wrap"><svg id="graph"></svg></div>
+    <aside id="panel" class="empty">
+      <div class="placeholder">Click a commit to see its details here.</div>
+      <div class="panel-body"></div>
+    </aside>
+  </div>
+</div>
+<div id="tooltip"></div>
+
+<!-- ===== vendored D3 v7 (inlined) ===== -->
+<script>
+__D3_PLACEHOLDER__
+</script>
+
+<!-- ===== data (inlined) ===== -->
+<script>
+__DATA_PLACEHOLDER__
+</script>
+
+<!-- ===== app ===== -->
+<script>
+(function () {
+  "use strict";
+
+  // ---- decode the raw, NUL/RS-delimited git output (base64 -> utf8) ----
+  function b64ToUtf8(b64) {
+    if (!b64) return "";
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+  var RS = "\x1e", US = "\x00";
+
+  function splitRecords(s) {
+    return s.split(RS).map(function (r) { return r.replace(/^\n+/, ""); })
+            .filter(function (r) { return r.trim().length > 0; });
+  }
+
+  // commits: SHA, parents(space-sep), author, isoDate, subject, body
+  var commits = splitRecords(b64ToUtf8(RAW_COMMITS_B64)).map(function (rec) {
+    var f = rec.split(US);
+    return {
+      sha: f[0],
+      parents: (f[1] || "").trim().length ? f[1].trim().split(/\s+/) : [],
+      author: f[2] || "",
+      iso: f[3] || "",
+      subject: f[4] || "",
+      body: (f[5] || "").replace(/\n+$/, "")
+    };
+  });
+
+  // refs: tab-separated fields, one ref per line — fullref, oid, derefOid, headMark
+  var rawRefs = b64ToUtf8(RAW_REFS_B64).split("\n").filter(function (l) { return l.trim().length; })
+    .map(function (line) {
+      var f = line.split("\t");
+      return { full: f[0], oid: f[1], deref: f[2] || "", head: (f[3] || "").trim() === "*" };
+    });
+
+  if (!commits.length) {
+    document.getElementById("graph-wrap").innerHTML =
+      '<p style="padding:24px;color:#7d8590">No commits to display.</p>';
+    return;
+  }
+
+  // ---- index commits, build row order (newest-first from git --date-order) ----
+  var byId = {};
+  commits.forEach(function (c, i) { c.row = i; c.refs = []; byId[c.sha] = c; });
+
+  // ---- classify refs ----
+  var localBranches = [];   // {short, oid}
+  var remoteBranches = {};  // short(no remote prefix) -> oid  (track origin/* divergence)
+  var remoteList = [];      // {short, oid}
+  var tags = [];            // {short, oid}
+  var headBranch = null;
+  rawRefs.forEach(function (r) {
+    if (r.full.indexOf("refs/heads/") === 0) {
+      var name = r.full.slice("refs/heads/".length);
+      localBranches.push({ short: name, oid: r.oid });
+      if (r.head) headBranch = name;
+    } else if (r.full.indexOf("refs/remotes/") === 0) {
+      var rname = r.full.slice("refs/remotes/".length);
+      if (/\/HEAD$/.test(rname)) return; // skip origin/HEAD symref
+      remoteList.push({ short: rname, oid: r.oid });
+    } else if (r.full.indexOf("refs/tags/") === 0) {
+      tags.push({ short: r.full.slice("refs/tags/".length), oid: r.deref || r.oid });
+    }
+  });
+
+  // ---- palette + deterministic color by name ----
+  var PALETTE = ["#ff2e88","#00f0ff","#b026ff","#39ff14","#ff9e00","#ff5e5b","#14e0ff","#f7d51d","#ff6ec7"];
+  var MAIN = "#2f81f7";
+  function hashStr(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; } return h >>> 0; }
+  function colorForBranch(name) { return PALETTE[hashStr(name) % PALETTE.length]; }
+
+  // ---- determine default branch + tip priority order ----
+  function isDefaultName(n) { return n === "main" || n === "master"; }
+  var defaultName = headBranch && localBranches.some(function (b) { return b.short === headBranch; }) ? headBranch
+                  : (localBranches.some(function (b) { return b.short === "main"; }) ? "main"
+                  : (localBranches.some(function (b) { return b.short === "master"; }) ? "master"
+                  : (localBranches[0] ? localBranches[0].short : null)));
+
+  var tips = localBranches.slice().sort(function (a, b) {
+    var ad = a.short === defaultName, bd = b.short === defaultName;
+    if (ad !== bd) return ad ? -1 : 1;
+    var am = isDefaultName(a.short), bm = isDefaultName(b.short);
+    if (am !== bm) return am ? -1 : 1;
+    return a.short < b.short ? -1 : a.short > b.short ? 1 : 0;
+  });
+
+  // ---- first-parent ownership walk ----
+  function assignOwner(startSha, owner, color) {
+    var sha = startSha, guard = 0;
+    while (sha && byId[sha] && guard++ < commits.length + 5) {
+      var c = byId[sha];
+      if (c.owner) break;            // already claimed by a higher-priority tip
+      c.owner = owner; c.color = color;
+      sha = c.parents.length ? c.parents[0] : null;
+    }
+  }
+  tips.forEach(function (t) {
+    var color = (t.short === defaultName || isDefaultName(t.short)) ? MAIN : colorForBranch(t.short);
+    if (t.short === defaultName) color = MAIN;
+    assignOwner(t.oid, "branch:" + t.short, t.short === defaultName ? MAIN : color);
+  });
+  // default lane is always electric blue
+  tips.forEach(function (t) {
+    if (t.short === defaultName) {
+      var s = t.oid;
+      while (s && byId[s]) { if (byId[s].owner === "branch:" + t.short) byId[s].color = MAIN; s = byId[s].parents.length ? byId[s].parents[0] : null; }
+    }
+  });
+
+  // ---- anon ownership for commits not reached by any tip's first-parent chain ----
+  commits.forEach(function (c) {
+    if (c.owner) return;
+    var owner = "anon:" + c.sha, color = colorForBranch(c.sha);
+    var sha = c.sha, guard = 0;
+    while (sha && byId[sha] && !byId[sha].owner && guard++ < commits.length + 5) {
+      byId[sha].owner = owner; byId[sha].color = color;
+      sha = byId[sha].parents.length ? byId[sha].parents[0] : null;
+    }
+  });
+
+  // ---- group owners, compute row span ----
+  var owners = {};
+  commits.forEach(function (c) {
+    var o = owners[c.owner] || (owners[c.owner] = { id: c.owner, color: c.color, min: c.row, max: c.row, isDefault: false });
+    if (c.row < o.min) o.min = c.row;
+    if (c.row > o.max) o.max = c.row;
+  });
+  if (defaultName) { var dkey = "branch:" + defaultName; if (owners[dkey]) owners[dkey].isDefault = true; }
+
+  // ---- column assignment (interval scheduling; default = col 0) ----
+  var ownerList = Object.keys(owners).map(function (k) { return owners[k]; });
+  ownerList.sort(function (a, b) {
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    if (a.min !== b.min) return a.min - b.min;
+    return a.max - b.max;
+  });
+  var laneEnd = []; // laneEnd[col] = last (max) row occupied
+  ownerList.forEach(function (o) {
+    if (o.isDefault) { o.col = 0; laneEnd[0] = Math.max(laneEnd[0] || -1, o.max); return; }
+    var col = 1;
+    while (true) {
+      if (col === 0) { col = 1; continue; }
+      if (laneEnd[col] === undefined || laneEnd[col] < o.min) break;
+      col++;
+    }
+    o.col = col; laneEnd[col] = o.max;
+  });
+  // make sure col 0 stays reserved-ish: if no default, allow col 0 reuse
+  commits.forEach(function (c) { c.col = owners[c.owner].col; });
+  var maxCol = 0; commits.forEach(function (c) { if (c.col > maxCol) maxCol = c.col; });
+
+  // ---- attach ref decorations to commits ----
+  function pushRef(oid, ref) { if (byId[oid]) byId[oid].refs.push(ref); }
+  localBranches.forEach(function (b) {
+    pushRef(b.oid, { kind: "branch", name: b.short, color: (b.short === defaultName) ? MAIN : colorForBranch(b.short), isHead: b.short === headBranch });
+  });
+  // origin/* divergence: render remote pill only when it differs from local counterpart
+  var localByName = {}; localBranches.forEach(function (b) { localByName[b.short] = b.oid; });
+  remoteList.forEach(function (r) {
+    var slash = r.short.indexOf("/");
+    var bare = slash >= 0 ? r.short.slice(slash + 1) : r.short;
+    if (localByName.hasOwnProperty(bare) && localByName[bare] === r.oid) return; // same as local -> hide
+    pushRef(r.oid, { kind: "remote", name: r.short, color: (bare === defaultName) ? MAIN : colorForBranch(bare), isHead: false });
+  });
+  tags.forEach(function (t) { pushRef(t.oid, { kind: "tag", name: t.short, color: "#ffd54a", isHead: false }); });
+
+  // =====================================================================
+  //  Render
+  // =====================================================================
+  var COLW = 34, ROWH = 46, PADX = 34, PADY = 34, R = 6, RMERGE = 8;
+  var graphWidth = PADX + maxCol * COLW;
+  var labelX = graphWidth + 26;
+  var height = PADY * 2 + (commits.length - 1) * ROWH;
+
+  function cx(c) { return PADX + c.col * COLW; }
+  function cy(c) { return PADY + c.row * ROWH; }
+
+  var svg = d3.select("#graph").attr("height", height);
+
+  // defs: neon glow filter
+  var defs = svg.append("defs");
+  var glow = defs.append("filter").attr("id", "glow").attr("x", "-60%").attr("y", "-60%").attr("width", "220%").attr("height", "220%");
+  glow.append("feGaussianBlur").attr("stdDeviation", "2.4").attr("result", "blur");
+  var merge = glow.append("feMerge");
+  merge.append("feMergeNode").attr("in", "blur");
+  merge.append("feMergeNode").attr("in", "SourceGraphic");
+
+  // Glow is applied to the edges GROUP, not per-edge: a perfectly vertical (same-lane)
+  // line has a zero-width bounding box, and an objectBoundingBox filter region collapses
+  // to nothing on it, so per-edge filters make vertical lines disappear. The group's bbox
+  // spans the whole graph, so the filter region is always valid.
+  var gEdges = svg.append("g").attr("filter", "url(#glow)");
+  var gNodes = svg.append("g");
+  var gLabels = svg.append("g");
+
+  // ---- edges ----
+  var edgeData = [];
+  commits.forEach(function (c) {
+    c.parents.forEach(function (p) {
+      var pc = byId[p];
+      if (!pc) return;
+      edgeData.push({ from: c, to: pc, color: c.color });
+    });
+  });
+  function edgePath(d) {
+    var x1 = cx(d.from), y1 = cy(d.from), x2 = cx(d.to), y2 = cy(d.to);
+    if (x1 === x2) return "M" + x1 + "," + y1 + "L" + x2 + "," + y2;
+    var my = (y1 + y2) / 2;
+    return "M" + x1 + "," + y1 + "C" + x1 + "," + my + " " + x2 + "," + my + " " + x2 + "," + y2;
+  }
+  var edgeSel = gEdges.selectAll("path").data(edgeData).enter().append("path")
+    .attr("class", "edge").attr("d", edgePath)
+    .attr("stroke", function (d) { return d.color; })
+    .attr("stroke-opacity", 0.85);
+
+  // ---- nodes ----
+  var tooltip = document.getElementById("tooltip");
+  var node = gNodes.selectAll("g.node").data(commits).enter().append("g")
+    .attr("class", "node node-hit")
+    .attr("transform", function (c) { return "translate(" + cx(c) + "," + cy(c) + ")"; })
+    .on("mouseenter", function (ev, c) {
+      tooltip.style.display = "block";
+      tooltip.innerHTML = '<span class="t-sha">' + c.sha.slice(0, 7) + "</span>" + escapeHtml(c.subject);
+    })
+    .on("mousemove", function (ev) {
+      tooltip.style.left = (ev.clientX + 14) + "px";
+      tooltip.style.top = (ev.clientY + 14) + "px";
+    })
+    .on("mouseleave", function () { tooltip.style.display = "none"; })
+    .on("click", function (ev, c) { showPanel(c); });
+
+  // merge: outer glowing ring
+  node.filter(function (c) { return c.parents.length >= 2; }).append("circle")
+    .attr("r", RMERGE + 5).attr("fill", "none")
+    .attr("stroke", function (c) { return c.color; }).attr("stroke-width", 1.6)
+    .attr("stroke-opacity", 0.55).attr("filter", "url(#glow)");
+
+  node.append("circle")
+    .attr("r", function (c) { return c.parents.length >= 2 ? RMERGE : R; })
+    .attr("fill", function (c) { return c.color; })
+    .attr("filter", "url(#glow)");
+  node.append("circle")
+    .attr("r", function (c) { return (c.parents.length >= 2 ? RMERGE : R) - 2.5; })
+    .attr("fill", "#0a0c10").attr("fill-opacity", 0.35);
+
+  // ---- ref labels (pills + tags) to the right of the graph ----
+  var labelG = gLabels.selectAll("g.lbl").data(commits.filter(function (c) { return c.refs.length; })).enter()
+    .append("g").attr("transform", function (c) { return "translate(" + labelX + "," + cy(c) + ")"; });
+
+  labelG.each(function (c) {
+    var g = d3.select(this);
+    var offset = 0;
+    // order: HEAD branch first, then branches, remotes, tags
+    var refs = c.refs.slice().sort(function (a, b) {
+      if (a.isHead !== b.isHead) return a.isHead ? -1 : 1;
+      var order = { branch: 0, remote: 1, tag: 2 };
+      return order[a.kind] - order[b.kind];
+    });
+    refs.forEach(function (ref) {
+      var isTag = ref.kind === "tag";
+      var txt = ref.name;
+      var w = txt.length * 6.7 + (isTag ? 26 : 20);
+      var pg = g.append("g").attr("transform", "translate(" + offset + ",0)");
+      if (isTag) {
+        // tag pennant shape
+        var h = 18;
+        pg.append("path")
+          .attr("d", "M9,-9 L" + (w - 4) + ",-9 L" + (w - 4) + ",9 L9,9 L0,0 Z")
+          .attr("fill", "rgba(255,213,74,.12)").attr("stroke", "#ffd54a").attr("stroke-width", 1.2);
+        pg.append("circle").attr("cx", 8).attr("cy", 0).attr("r", 2).attr("fill", "#ffd54a");
+        pg.append("text").attr("x", 16).attr("y", 4).attr("class", "tag-text").text(txt);
+      } else {
+        var rect = pg.append("rect").attr("x", 0).attr("y", -10).attr("width", w).attr("height", 20)
+          .attr("rx", 10).attr("fill", hexA(ref.color, 0.16))
+          .attr("stroke", ref.color).attr("stroke-width", 1.3);
+        if (ref.isHead) {
+          pg.append("rect").attr("x", -2).attr("y", -12).attr("width", w + 4).attr("height", 24)
+            .attr("rx", 12).attr("fill", "none").attr("stroke", "#ffffff").attr("stroke-width", 1.4)
+            .attr("class", "head-outline").attr("filter", "url(#glow)");
+        }
+        pg.append("text").attr("x", 9).attr("y", 4).attr("class", "pill-text")
+          .attr("fill", ref.color).text(txt);
+      }
+      offset += w + 8;
+    });
+  });
+
+  // widen svg to fit labels
+  var rightMost = labelX + 360;
+  svg.attr("width", Math.max(rightMost, graphWidth + 40));
+
+  // =====================================================================
+  //  Side panel
+  // =====================================================================
+  var panel = document.getElementById("panel");
+  function fmtDate(iso) {
+    if (!iso) return "";
+    var d = new Date(iso); if (isNaN(d)) return iso;
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+  function showPanel(c) {
+    panel.classList.remove("empty");
+    var pillsHtml = c.refs.map(function (ref) {
+      if (ref.kind === "tag") return '<span style="display:inline-block;padding:2px 9px;border-radius:6px;border:1px solid #ffd54a;color:#ffd54a;background:rgba(255,213,74,.1);font-size:11px;font-weight:600">' + escapeHtml(ref.name) + "</span>";
+      return '<span style="display:inline-block;padding:2px 9px;border-radius:10px;border:1px solid ' + ref.color + ';color:' + ref.color + ';background:' + hexA(ref.color, 0.14) + ';font-size:11px;font-weight:600">' + escapeHtml(ref.name) + "</span>";
+    }).join("");
+    var body = panel.querySelector(".panel-body");
+    body.innerHTML =
+      '<h2>' + escapeHtml(c.subject) + "</h2>" +
+      (c.body ? '<div class="panel-row"><div class="body-text">' + escapeHtml(c.body) + "</div></div>" : "") +
+      (pillsHtml ? '<div class="panel-row"><div class="label">Refs</div><div class="panel-pills">' + pillsHtml + "</div></div>" : "") +
+      '<div class="panel-row"><div class="label">Commit</div><div class="value"><span class="sha" id="sha-copy">' + escapeHtml(c.sha.slice(0, 10)) + "</span></div></div>" +
+      '<div class="panel-row"><div class="label">Author</div><div class="value">' + escapeHtml(c.author) + "</div></div>" +
+      '<div class="panel-row"><div class="label">Date</div><div class="value">' + escapeHtml(fmtDate(c.iso)) + "</div></div>";
+    var shaEl = document.getElementById("sha-copy");
+    shaEl.addEventListener("click", function () {
+      var full = c.sha;
+      (navigator.clipboard ? navigator.clipboard.writeText(full) : Promise.reject()).then(go, function () {
+        var ta = document.createElement("textarea"); ta.value = full; document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch (e) {} document.body.removeChild(ta); go();
+      });
+      function go() { shaEl.classList.add("copied"); shaEl.textContent = "copied ✓"; setTimeout(function () { shaEl.classList.remove("copied"); shaEl.textContent = full.slice(0, 10); }, 1100); }
+    });
+  }
+
+  // =====================================================================
+  //  Search (dim non-matches)
+  // =====================================================================
+  function matchesQuery(c, q) {
+    return (c.subject + " " + c.body + " " + c.author + " " + c.sha).toLowerCase().indexOf(q) >= 0;
+  }
+  var searchEl = document.getElementById("search");
+  searchEl.addEventListener("input", function () {
+    var q = searchEl.value.trim().toLowerCase();
+    node.classed("node-dim", function (c) { return q ? !matchesQuery(c, q) : false; });
+    labelG.style("opacity", function (c) { return (!q || matchesQuery(c, q)) ? 1 : 0.2; });
+    // edges stay bright only when both endpoints match, so branch lines dim with the nodes
+    edgeSel.style("opacity", function (d) {
+      if (!q) return 1;
+      return (matchesQuery(d.from, q) && matchesQuery(d.to, q)) ? 1 : 0.2;
+    });
+  });
+
+  // =====================================================================
+  //  Banner + meta
+  // =====================================================================
+  var meta = (typeof META !== "undefined") ? META : {};
+  var note = document.getElementById("meta-note");
+  note.textContent = commits.length + " commit" + (commits.length === 1 ? "" : "s") +
+    (meta.branch ? "  ·  branch: " + meta.branch : "  ·  all branches");
+  if (meta.total && meta.total > commits.length) {
+    var banner = document.getElementById("banner");
+    banner.style.display = "inline-block";
+    banner.textContent = "Showing " + commits.length.toLocaleString() + " of " + meta.total.toLocaleString() +
+      " commits — re-run with --depth N for more.";
+  }
+
+  // ---- helpers ----
+  function escapeHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function hexA(hex, a) {
+    var h = hex.replace("#", "");
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+  }
+})();
+</script>
+</body>
+</html>
