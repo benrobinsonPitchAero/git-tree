@@ -67,6 +67,19 @@ fi
 REFS_FMT=$'%(refname)\t%(objectname)\t%(*objectname)\t%(HEAD)'
 REFS_B64="$(git for-each-ref --format="$REFS_FMT" refs/heads refs/remotes refs/tags | b64)"
 
+# ---- determine the repository's default branch (HEAD-independent) ----
+# Prefer origin/HEAD's target, then a local main, then master. This must NOT
+# depend on the current checkout so branch colors stay stable across switches.
+DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^[^/]*/##' || true)"
+if [ -z "$DEFAULT_BRANCH" ]; then
+  if git rev-parse --verify --quiet refs/heads/main >/dev/null 2>&1; then
+    DEFAULT_BRANCH="main"
+  elif git rev-parse --verify --quiet refs/heads/master >/dev/null 2>&1; then
+    DEFAULT_BRANCH="master"
+  fi
+fi
+if [ -n "$DEFAULT_BRANCH" ]; then DEFAULT_JSON="\"$(printf '%s' "$DEFAULT_BRANCH" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; else DEFAULT_JSON="null"; fi
+
 # ---- total commit count for truncation banner ----
 if [ -n "$BRANCH" ]; then
   TOTAL="$(git rev-list --count "$BRANCH" 2>/dev/null || echo 0)"
@@ -83,7 +96,7 @@ trap 'rm -f "$DATABLOCK"' EXIT
 {
   printf 'var RAW_COMMITS_B64 = "%s";\n' "$COMMITS_B64"
   printf 'var RAW_REFS_B64 = "%s";\n' "$REFS_B64"
-  printf 'var META = { total: %s, depth: %s, branch: %s };\n' "${TOTAL:-0}" "$DEPTH" "$BRANCH_JSON"
+  printf 'var META = { total: %s, depth: %s, branch: %s, defaultBranch: %s };\n' "${TOTAL:-0}" "$DEPTH" "$BRANCH_JSON" "$DEFAULT_JSON"
 } > "$DATABLOCK"
 
 # ---- splice D3 + data into the template (awk avoids sed escaping pitfalls) ----

@@ -292,11 +292,21 @@ __DATA_PLACEHOLDER__
   function colorForBranch(name) { return PALETTE[hashStr(name) % PALETTE.length]; }
 
   // ---- determine default branch + tip priority order ----
+  // Two distinct notions, both chosen independently of the current HEAD so
+  // colors stay consistent across checkouts:
+  //   blueName    - the repo's real default branch (origin's HEAD via META, else
+  //                 a local main/master). Only this branch earns electric blue.
+  //                 If the repo has no real default, blueName is null and EVERY
+  //                 branch is hashed.
+  //   defaultName - which branch owns lane 0 in the layout. Falls back to the
+  //                 first branch alphabetically so there is always a primary lane.
   function isDefaultName(n) { return n === "main" || n === "master"; }
-  var defaultName = headBranch && localBranches.some(function (b) { return b.short === headBranch; }) ? headBranch
-                  : (localBranches.some(function (b) { return b.short === "main"; }) ? "main"
-                  : (localBranches.some(function (b) { return b.short === "master"; }) ? "master"
-                  : (localBranches[0] ? localBranches[0].short : null)));
+  var metaDefault = (typeof META !== "undefined" && META && META.defaultBranch) || null;
+  var blueName = (metaDefault && localBranches.some(function (b) { return b.short === metaDefault; })) ? metaDefault
+               : (localBranches.some(function (b) { return b.short === "main"; }) ? "main"
+               : (localBranches.some(function (b) { return b.short === "master"; }) ? "master"
+               : null));
+  var defaultName = blueName || (localBranches[0] ? localBranches[0].short : null);
 
   var tips = localBranches.slice().sort(function (a, b) {
     var ad = a.short === defaultName, bd = b.short === defaultName;
@@ -317,13 +327,12 @@ __DATA_PLACEHOLDER__
     }
   }
   tips.forEach(function (t) {
-    var color = (t.short === defaultName || isDefaultName(t.short)) ? MAIN : colorForBranch(t.short);
-    if (t.short === defaultName) color = MAIN;
-    assignOwner(t.oid, "branch:" + t.short, t.short === defaultName ? MAIN : color);
+    var color = (t.short === blueName) ? MAIN : colorForBranch(t.short);
+    assignOwner(t.oid, "branch:" + t.short, color);
   });
-  // default lane is always electric blue
+  // the real default branch's lane is always electric blue
   tips.forEach(function (t) {
-    if (t.short === defaultName) {
+    if (blueName && t.short === blueName) {
       var s = t.oid;
       while (s && byId[s]) { if (byId[s].owner === "branch:" + t.short) byId[s].color = MAIN; s = byId[s].parents.length ? byId[s].parents[0] : null; }
     }
@@ -374,7 +383,7 @@ __DATA_PLACEHOLDER__
   // ---- attach ref decorations to commits ----
   function pushRef(oid, ref) { if (byId[oid]) byId[oid].refs.push(ref); }
   localBranches.forEach(function (b) {
-    pushRef(b.oid, { kind: "branch", name: b.short, color: (b.short === defaultName) ? MAIN : colorForBranch(b.short), isHead: b.short === headBranch });
+    pushRef(b.oid, { kind: "branch", name: b.short, color: (b.short === blueName) ? MAIN : colorForBranch(b.short), isHead: b.short === headBranch });
   });
   // origin/* divergence: render remote pill only when it differs from local counterpart
   var localByName = {}; localBranches.forEach(function (b) { localByName[b.short] = b.oid; });
@@ -382,7 +391,7 @@ __DATA_PLACEHOLDER__
     var slash = r.short.indexOf("/");
     var bare = slash >= 0 ? r.short.slice(slash + 1) : r.short;
     if (localByName.hasOwnProperty(bare) && localByName[bare] === r.oid) return; // same as local -> hide
-    pushRef(r.oid, { kind: "remote", name: r.short, color: (bare === defaultName) ? MAIN : colorForBranch(bare), isHead: false });
+    pushRef(r.oid, { kind: "remote", name: r.short, color: (bare === blueName) ? MAIN : colorForBranch(bare), isHead: false });
   });
   tags.forEach(function (t) { pushRef(t.oid, { kind: "tag", name: t.short, color: "#ffd54a", isHead: false }); });
 
