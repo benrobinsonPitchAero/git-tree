@@ -316,6 +316,19 @@ __DATA_PLACEHOLDER__
     return a.short < b.short ? -1 : a.short > b.short ? 1 : 0;
   });
 
+  // remote-only branches (no local counterpart) also seed lanes, keyed by their bare
+  // name so the lane/node color matches the pill (which is colored by bare name too).
+  // Appended after locals so a local branch always wins any commit they both reach.
+  var localByNameEarly = {}; localBranches.forEach(function (b) { localByNameEarly[b.short] = b.oid; });
+  var seenBare = {}, remoteOnlyTips = [];
+  remoteList.slice().sort(function (a, b) { return a.short < b.short ? -1 : a.short > b.short ? 1 : 0; })
+    .forEach(function (r) {
+      var slash = r.short.indexOf("/"), bare = slash >= 0 ? r.short.slice(slash + 1) : r.short;
+      if (localByNameEarly.hasOwnProperty(bare) || seenBare[bare]) return;
+      seenBare[bare] = 1; remoteOnlyTips.push({ short: bare, oid: r.oid });
+    });
+  tips = tips.concat(remoteOnlyTips);
+
   // ---- first-parent ownership walk ----
   function assignOwner(startSha, owner, color) {
     var sha = startSha, guard = 0;
@@ -349,14 +362,25 @@ __DATA_PLACEHOLDER__
     }
   });
 
-  // ---- group owners, compute row span ----
+  // ---- group owners, compute row span + bottom (oldest) commit ----
   var owners = {};
   commits.forEach(function (c) {
-    var o = owners[c.owner] || (owners[c.owner] = { id: c.owner, color: c.color, min: c.row, max: c.row, isDefault: false });
+    var o = owners[c.owner] || (owners[c.owner] = { id: c.owner, color: c.color, min: c.row, max: c.row, bottom: c, isDefault: false });
     if (c.row < o.min) o.min = c.row;
-    if (c.row > o.max) o.max = c.row;
+    if (c.row > o.max) { o.max = c.row; o.bottom = c; }
   });
   if (defaultName) { var dkey = "branch:" + defaultName; if (owners[dkey]) owners[dkey].isDefault = true; }
+
+  // A lane doesn't stop at its oldest owned commit: that commit's first-parent edge
+  // travels down to an ancestor in another lane, and occupies this lane's column across
+  // every row in between. laneMax reserves that full vertical extent so the scheduler
+  // won't pack an unrelated branch into the same column (which would make the connector
+  // edge visually pass straight through it and imply a false parent relationship).
+  Object.keys(owners).forEach(function (k) {
+    var o = owners[k], bc = o.bottom, pr = o.max;
+    if (bc && bc.parents.length && byId[bc.parents[0]]) pr = byId[bc.parents[0]].row;
+    o.laneMax = Math.max(o.max, pr);
+  });
 
   // ---- column assignment (interval scheduling; default = col 0) ----
   var ownerList = Object.keys(owners).map(function (k) { return owners[k]; });
@@ -365,16 +389,16 @@ __DATA_PLACEHOLDER__
     if (a.min !== b.min) return a.min - b.min;
     return a.max - b.max;
   });
-  var laneEnd = []; // laneEnd[col] = last (max) row occupied
+  var laneEnd = []; // laneEnd[col] = last row occupied (incl. the connector edge to the base)
   ownerList.forEach(function (o) {
-    if (o.isDefault) { o.col = 0; laneEnd[0] = Math.max(laneEnd[0] || -1, o.max); return; }
+    if (o.isDefault) { o.col = 0; laneEnd[0] = Math.max(laneEnd[0] || -1, o.laneMax); return; }
     var col = 1;
     while (true) {
       if (col === 0) { col = 1; continue; }
       if (laneEnd[col] === undefined || laneEnd[col] < o.min) break;
       col++;
     }
-    o.col = col; laneEnd[col] = o.max;
+    o.col = col; laneEnd[col] = o.laneMax;
   });
   // make sure col 0 stays reserved-ish: if no default, allow col 0 reuse
   commits.forEach(function (c) { c.col = owners[c.owner].col; });
